@@ -11,11 +11,16 @@ import aiohttp
 from aiohttp.client import ClientSession
 import asyncio
 from functools import wraps
+import logging
+
+logger = logging.getLogger()
+
+logging.basicConfig(level=logging.DEBUG)
 
 def coroutine(f):
     @wraps(f)
     def wrapper(*args, **kwargs):
-        return asyncio.run(f(*args, **kwargs))
+        return asyncio.run(f(*args, **kwargs), debug=True)
 
     return wrapper
 
@@ -32,9 +37,11 @@ async def crack(url:str, user_list:Path, password_list:Path, threads:int):
         for data in permutations(user_list, password_list):
             task = asyncio.ensure_future(post_and_check(url, data, session))
             tasks.append(task)
-        await asyncio.gather(*tasks, return_exceptions=True)
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+    for result in results:
+        if isinstance(result, Exception):
+            raise result
     
-
 
 def permutations(user_list, password_list):
     users = user_list.read_text("latin-1").splitlines()
