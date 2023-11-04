@@ -5,13 +5,13 @@ from requests.sessions import Session
 import click
 from pathlib import Path
 import sys
-import timeit
 import asyncio
 import aiohttp
 from aiohttp.client import ClientSession
 import asyncio
 from functools import wraps
 import logging
+import timeit
 
 logger = logging.getLogger()
 
@@ -46,13 +46,10 @@ async def crack(url:str, user_list:Path, password_list:Path, threads:int):
 def permutations(user_list, password_list):
     users = user_list.read_text("latin-1").splitlines()
     users = list(filter(lambda user: not any(char in user for char in ["!","§","$","%","&","/","(",")","=","?",")"] + [str(num) for num in range(10)]), users))
-    users = users
     passwords = password_list.read_text("latin-1").splitlines()
-    data = []
     for user in users:
         for password in passwords:
-            data.append({"j_username":user,"j_password": password, "Submit":"Sign+in"})
-    return data
+            yield {"j_username":user,"j_password": password, "Submit":"Sign+in"}
            
 
 async def post_and_check(url, data, session:ClientSession):
