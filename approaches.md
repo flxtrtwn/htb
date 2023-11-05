@@ -26,6 +26,7 @@
         - Find binaries with permissions for user group `find / -group <group_name> 2>/dev/null`
         - Query infos about files `ls -la <path_to_file> && file <path_to_file>`
         - Append PATH `export PATH=<directory>:$PATH`
+        - Check vulnerable binaries https://gtfobins.github.io/
 
 
 # Password cracking
