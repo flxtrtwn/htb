@@ -14,7 +14,8 @@ import logging
 import timeit
 from typing import Generator
 
-logger = logging.getLogger(logging.basicConfig(level=logging.DEBUG))
+logger = logging.getLogger(logging.basicConfig(level=logging.INFO))
+logging.getLogger('asyncio').setLevel(logging.ERROR)
 
 
 def coroutine(f):
@@ -32,7 +33,7 @@ def coroutine(f):
 @click.option("-P", "password_list", type=Path, help="List of passwords to try")
 @click.option("--params", type=str, required=True, help="Request string like 'USER=userkey&PASS=passkey&ANYTHING=anything")
 @click.option("--fail", type=str, required=True, help="Content in website body when login failed")
-@click.option("-b", "batch_size", type=int, default=1000, help="Number of parallel requests")
+@click.option("-b", "batch_size", type=int, default=10000, help="Number of parallel requests")
 @click.option("-t", "threads", type=int, default=8)
 @coroutine
 async def crack(url:str, user:str, password:str, user_list:Path, password_list:Path, params:str, fail:str, batch_size:int, threads:int):
@@ -40,10 +41,14 @@ async def crack(url:str, user:str, password:str, user_list:Path, password_list:P
     request_data = RequestData(params)
     users = user_list.read_text("latin-1").splitlines() if user_list else [user]
     passwords = password_list.read_text("latin-1").splitlines() if password_list else [password]
-    myconn = aiohttp.TCPConnector(limit=10)
+    total_combinations = len(users) * len(passwords)
+    myconn = aiohttp.TCPConnector(limit=20)
     async with ClientSession(connector=myconn) as session:
+        combinations = total_combinations
         async for batch in batched_tasks((asyncio.ensure_future(post_and_check(url, data, fail, session)) for data in permutations(users, passwords, request_data)), batch_size):
             results = await asyncio.gather(*batch, return_exceptions=True)
+            combinations -= batch_size
+            logger.info("Progress: %s", min(1 - combinations/total_combinations, 1.0))
             for result in results:
                 if isinstance(result, Exception):
                     raise result
