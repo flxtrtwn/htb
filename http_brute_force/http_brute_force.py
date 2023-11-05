@@ -31,14 +31,14 @@ def coroutine(f):
 @click.option("-p", "password", type=str, help="Single known password")
 @click.option("-U", "user_list", type=Path, help="List of users to try")
 @click.option("-P", "password_list", type=Path, help="List of passwords to try")
-@click.option("--params", type=str, required=True, help="Request string like 'USER=userkey&PASS=passkey&ANYTHING=anything")
+@click.option("--data", type=str, required=True, help="Request string like 'USER=userkey&PASS=passkey&ANYTHING=anything")
 @click.option("--fail", type=str, required=True, help="Content in website body when login failed")
 @click.option("-b", "batch_size", type=int, default=10000, help="Number of parallel requests")
 @click.option("-t", "threads", type=int, default=8)
 @coroutine
-async def crack(url:str, user:str, password:str, user_list:Path, password_list:Path, params:str, fail:str, batch_size:int, threads:int):
+async def crack(url:str, user:str, password:str, user_list:Path, password_list:Path, data:str, fail:str, batch_size:int, threads:int):
     _check_inputs(url, user, password, user_list, password_list)
-    request_data = RequestData(params)
+    request_data = RequestData(data)
     users = user_list.read_text("latin-1").splitlines() if user_list else [user]
     passwords = password_list.read_text("latin-1").splitlines() if password_list else [password]
     total_combinations = len(users) * len(passwords)
