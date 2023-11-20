@@ -42,7 +42,7 @@
         - Query infos about files `ls -la <path_to_file> && file <path_to_file>`
         - Append PATH `export PATH=<directory>:$PATH`
         - Check vulnerable binaries https://gtfobins.github.io/
-        - Inspection/Injection: `pwn`, `cutter`
+        - Inspection/Injection: `pwn`, `cutter`, `Ghidra`
 
 
 # Remote code execution
